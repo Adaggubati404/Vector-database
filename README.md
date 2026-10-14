@@ -1,112 +1,135 @@
-# A vector database from scratch
+# Vector Database from Scratch
 
-This project is a small vector database written so you can read every part of it. It stores text as numeric vectors, finds the closest ones, and keeps them on disk. NumPy is the only library the core uses. There is no FAISS, Chroma, or hnswlib.
+A small, readable vector database written in Python with **NumPy as its only core dependency**: no FAISS, Chroma, or hnswlib. It splits text into chunks, turns each chunk into a vector, stores the vectors on disk, and finds the closest ones with either an exact scan or an HNSW graph.
 
-## Run the sample
+## Why I built it
 
-From this directory:
+Vector databases sit underneath most RAG and agentic AI systems. I wanted to understand them from first principles instead of treating them as a black box: what a vector is, why cosine similarity turns into a dot product, how an approximate index like HNSW trades accuracy for speed, and what "persisting a collection" really means. Every part of this project is small enough to read in one sitting.
+
+## Features
+
+- **Chunking:** 500-character windows with a 50-character overlap, so a sentence that straddles a cut still appears whole in one window.
+- **Embedding:** a deterministic hashing embedder (256 dimensions). No model download, and the same text always gives the same vector.
+- **Exact search:** scores every stored vector with one matrix product (`V @ q`) and returns the top-k.
+- **HNSW approximate search:** a Hierarchical Navigable Small World graph with configurable `M` (default 16), `ef_construction` and `ef_search` (default 64).
+- **Metadata filters:** equality filters such as `{"source": "hnsw.txt"}`, applied before the top-k is chosen.
+- **Persistence:** `save` / `load` to `vectors.npy` (float32 matrix) and `meta.json` (text, metadata, embedder settings and the HNSW graph).
+- **Delete:** removes a record and rebuilds the graph from the remaining rows.
+- **CLI:** `seed`, `add`, `query` (with `--mode exact|hnsw`), and `stats`.
+- **Tests:** metric identities, chunk overlap, exact top-k, filters, get/delete, save/load, HNSW recall, and sample queries.
+
+## How it works
+
+```
+text ──► chunk_text ──► HashingEmbedder ──► VectorStore (matrix + text + metadata)
+                                              │
+                                              └──► HNSWIndex (graph over row ids)
+
+query ──► HashingEmbedder ──► exact scan (V @ q)  or  HNSW graph walk ──► top-k hits
+```
+
+1. **Chunk.** `chunk_text` cuts a note into overlapping character windows. A long note becomes several records.
+2. **Embed.** `HashingEmbedder.embed` lowercases the text, drops common stopwords, hashes each remaining word into one of 256 bins, and scales the result to length 1. This is a hashing trick, not a neural model: notes that share words point in similar directions, and paraphrases with different words do not.
+3. **Store.** `VectorStore` appends the vector as a matrix row and keeps the chunk text and metadata (`source`, `topic`, `chunk`) next to it.
+4. **Index.** `HNSWIndex` links the new row into a stack of graphs. Each insert samples a level with `floor(-ln(U) / ln(M))`, so most rows live only on layer 0. A node keeps at most `M` neighbors per layer and drops the farthest when it grows past that.
+5. **Search.**
+   - *Exact:* because every vector is normalized on insert, cosine similarity is a dot product, so one matrix multiplication scores the whole collection. This is the reference answer.
+   - *HNSW:* search enters at the top layer, steps greedily toward the query, drops a layer, and on the bottom layer keeps a wider beam (`ef_search`) before returning the best `k`.
+   - A metadata filter always uses the exact scan: rejected rows get a score of negative infinity before the top-k is chosen.
+
+### Exact vs. approximate
+
+The exact scan always finds the true nearest neighbors, but its cost grows linearly with the number of rows. HNSW visits only part of the graph, so it can occasionally miss a true neighbor. `tests/test_vectordb.py` checks that, on a few hundred random unit vectors, HNSW recall@10 against the exact scan stays at least 0.9.
+
+## Getting started
+
+**Requirements:** Python 3 and the packages in `requirements.txt` (`numpy>=1.24`, `pytest>=7.0`).
 
 ```bash
 pip install -r requirements.txt
-python -m vectordb seed
+
+python -m vectordb seed                                            # load sample_docs/ into ./data
 python -m vectordb query "how does approximate search work" --k 3
 python -m vectordb query "how to bake sourdough bread" --k 3
 python -m vectordb stats
-python examples/demo.py
+python examples/demo.py                                            # 2-D geometry demo + sample questions
 ```
 
-`seed` reads the notes in `sample_docs/`, splits them into chunks, turns each chunk into a vector, and writes the collection to `./data`. Running `seed` again replaces that collection. `add` inserts extra `.txt` files into the same directory.
-
-Each result line is a rank, a score, the source file, and the chunk text. The score is cosine similarity. Higher means closer.
-
-Questions to try, and the note that should rank first:
-
-| Question | Top note |
-| --- | --- |
-| how does approximate search work | `hnsw.txt` |
-| cosine similarity between normalized vectors | `cosine.txt` |
-| split long documents into overlapping chunks | `chunking.txt` |
-| how to bake sourdough bread | `sourdough.txt` |
-
-`sourdough.txt` and `hiking.txt` are there so a question about bread does not land on a note about graphs. The hiking note is the other contrast.
+Compare the two search modes:
 
 ```bash
 python -m vectordb query "cosine similarity between normalized vectors" --mode exact --k 3
 python -m vectordb query "cosine similarity between normalized vectors" --mode hnsw --k 3
 ```
 
-`exact` scores every row. `hnsw` walks the graph. On this small collection the two rankings usually agree. `--mode` defaults to `hnsw`.
+Add your own notes:
 
-## What a vector is
-
-A vector is a list of numbers. Here, each chunk of text becomes one vector of 256 floats. The database stores that list next to the original words. A query is converted the same way, and search looks for stored lists that point in a similar direction.
-
-The embedder in `vectordb/embedder.py` is a hashing trick, not a neural model. It lowercases the text, drops tiny function words, and adds each remaining word into a bin chosen by a hash. The bins are averaged and scaled to length 1. The same sentence always produces the same vector, and nothing is downloaded.
-
-Shared words pull two vectors together. Different words do not, even when a person would say the sentences mean the same thing. The sample notes repeat the words their demo questions use, so a hit is something you can check by reading.
-
-## Why cosine becomes a dot product
-
-Cosine similarity is the cosine of the angle between two arrows. It ignores length and compares direction.
-
-On insert, every vector is divided by its length. A normalized vector has length 1. For two normalized vectors, cosine similarity is their dot product:
-
-```text
-score = V[row] · query
+```bash
+python -m vectordb add path/to/note1.txt path/to/note2.txt
 ```
 
-Exact search does that for every row at once. If `V` has shape `(n, dim)` and `q` is the normalized query, the scores are the matrix product `V @ q`. The largest scores are the nearest chunks.
+Each result line shows the rank, the cosine score (higher is closer), the source file, and the chunk text.
 
-You can see this with four arrows in `examples/demo.py`. The query points almost along the x-axis, so the point labeled `east` ranks first. The printed cosine matches `cosine(query, east)` computed directly.
-
-## From text to a hit
-
-1. `chunk_text` cuts a note into 500-character windows that overlap by 50 characters. A long note becomes several records. A sentence that straddles a cut still appears whole in one window.
-2. `HashingEmbedder.embed` turns each window into a unit vector.
-3. `VectorStore` appends the vector as a matrix row and keeps the text and metadata (`source`, `topic`, `chunk`).
-4. `HNSWIndex` links that row into the graph.
-5. A query is embedded, then either the store scores every row or the graph walks toward the query.
-
-A metadata filter such as `{"source": "hnsw.txt"}` uses the exact scan. Rejected rows are scored as negative infinity before the top-k is chosen, so the filter still returns the closest row among the ones it keeps.
-
-## Exact scan and HNSW
-
-The exact scan is the reference answer. It looks at every vector. That is correct, and the work grows in a straight line with the number of rows.
-
-HNSW (Hierarchical Navigable Small World) is a stack of graphs. Upper layers are sparse shortcuts. The bottom layer contains every row. Search enters at the top, steps to the neighbor closest to the query, then drops a layer. On the bottom layer it keeps a wider beam of candidates (`ef_search`, default 64) and returns the best `k`.
-
-Insert samples a level with `floor(-ln(U) / ln(M))`. Most rows live only on layer 0. A new row connects to at most `M` neighbors on each layer it occupies (default `M` is 16). A neighbor that grows past `M` links keeps the `M` closest and drops the rest.
-
-The graph is an approximation. It can miss a true neighbor when the walk takes a poor turn. `tests/test_vectordb.py` checks that, on a few hundred random unit vectors, recall@10 against the exact scan stays at least 0.9.
-
-Open `data/meta.json` after seeding. `hnsw.layers` is one object per layer. Inside a layer, each row id maps to the row ids it links to. The bottom layer lists every row. Layers above it are the shortcuts, and this sample's level draws include a few of those. A smaller draw can land entirely on the bottom layer. `data/vectors.npy` is the float32 matrix.
-
-A window is a raw character span, so a chunk can start or end in the middle of a word. The 50-character overlap keeps the rest of that word in the neighboring chunk.
-
-## Layout
-
-| File | Role |
+| Question | Note that should rank first |
 | --- | --- |
-| `vectordb/metrics.py` | cosine, dot product, L2 distance, normalization |
-| `vectordb/chunker.py` | overlapping character windows |
-| `vectordb/embedder.py` | hashing embedder and the `Embedder` protocol |
-| `vectordb/store.py` | matrix, text, metadata, exact top-k |
-| `vectordb/hnsw.py` | approximate graph over row ids |
-| `vectordb/engine.py` | `VectorDB`: add, search, save, load |
-| `vectordb/__main__.py` | `seed`, `add`, `query`, `stats` |
-| `sample_docs/` | notes the seed command loads |
-| `examples/demo.py` | the 2D arrows, then the sample questions |
+| how does approximate search work | `hnsw.txt` |
+| cosine similarity between normalized vectors | `cosine.txt` |
+| split long documents into overlapping chunks | `chunking.txt` |
+| how to bake sourdough bread | `sourdough.txt` |
 
-`save` writes `meta.json` and `vectors.npy`. `load` rebuilds the store and the graph. The embedder seed and dimension are in the JSON, so a query in a new process uses the same hashing as the rows on disk.
+`sourdough.txt` and `hiking.txt` are off-topic contrast notes, so a question about bread does not land on a note about graphs.
 
-## What a production engine adds
+### Sample output
 
-This design stops once the algorithm is visible. A production vector database also keeps a write-ahead log, serves concurrent writers, compresses vectors with product quantization, and spreads shards across machines. Those pieces matter at large scale. They sit around the same core: embed, store, and find nearest neighbors.
+> **TODO (Ashok):** paste the real output of `python -m vectordb query "how does approximate search work" --k 3` here.
 
-## Tests
+```text
+<paste output here>
+```
+
+### Run the tests
 
 ```bash
 pytest
 ```
 
-The tests cover metric identities, chunk overlap, exact top-k, metadata filters, save/load, HNSW recall, and the sample questions above.
+> **TODO (Ashok):** paste the `pytest` summary line here after running it.
+
+## Project structure
+
+| Path | Role |
+| --- | --- |
+| `vectordb/metrics.py` | cosine, dot product, L2 distance, normalization |
+| `vectordb/chunker.py` | overlapping character windows |
+| `vectordb/embedder.py` | hashing embedder and the `Embedder` protocol |
+| `vectordb/store.py` | vector matrix, text, metadata, exact top-k, filters |
+| `vectordb/hnsw.py` | HNSW approximate nearest-neighbor graph |
+| `vectordb/engine.py` | `VectorDB` facade: add, search, delete, save, load |
+| `vectordb/__main__.py` | CLI: `seed`, `add`, `query`, `stats` |
+| `sample_docs/` | sample notes loaded by `seed` |
+| `examples/demo.py` | 2-D vector geometry demo, then the sample questions |
+| `tests/test_vectordb.py` | pytest suite |
+
+After `seed`, open `data/meta.json`: `hnsw.layers` lists one object per layer, mapping each row id to the row ids it links to. `data/vectors.npy` is the float32 matrix.
+
+## What I learned
+
+- A vector is just a list of numbers. Similarity search is geometry: after L2 normalization, cosine similarity is a dot product, and a whole collection can be scored with one matrix multiplication.
+- Chunk size and overlap decide what a single vector "means". Smaller windows stay specific, and overlap protects sentences at the boundaries.
+- The embedder decides what "similar" means. A hashing embedder matches shared words, not meaning, which shows clearly why real systems use learned embedding models.
+- HNSW is a speed-for-accuracy trade: layered graphs, greedy descent and a wider search beam on the bottom layer, measured with recall against an exact baseline.
+- Metadata filtering and persistence (saving the embedder settings alongside the vectors) are what turn an algorithm into a usable database.
+
+## Next steps
+
+These are not implemented yet:
+
+- Plug in a learned embedding model behind the existing `Embedder` protocol and compare its results with the hashing embedder.
+- Add the HNSW neighbor-selection heuristic and in-place deletion instead of rebuilding the graph.
+- Benchmark exact vs. HNSW latency and recall as the collection grows.
+- Explore what production engines add: a write-ahead log, concurrent writers, product quantization, and sharding.
+- Use it as the retrieval layer for a small RAG or agentic workflow.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
