@@ -1,0 +1,563 @@
+{
+  "dim": 256,
+  "chunk_size": 500,
+  "chunk_overlap": 50,
+  "embedder": {
+    "type": "hashing",
+    "dim": 256,
+    "seed": 0
+  },
+  "ids": [
+    "chunking.txt#0",
+    "chunking.txt#1",
+    "chunking.txt#2",
+    "cosine.txt#0",
+    "cosine.txt#1",
+    "cosine.txt#2",
+    "exact_search.txt#0",
+    "exact_search.txt#1",
+    "exact_search.txt#2",
+    "hiking.txt#0",
+    "hiking.txt#1",
+    "hnsw.txt#0",
+    "hnsw.txt#1",
+    "hnsw.txt#2",
+    "persistence.txt#0",
+    "persistence.txt#1",
+    "sourdough.txt#0",
+    "sourdough.txt#1",
+    "vectors.txt#0",
+    "vectors.txt#1",
+    "vectors.txt#2"
+  ],
+  "texts": [
+    "Long documents do not belong in the collection as one giant row. We split long documents into overlapping chunks so each piece is small enough to embed and specific enough to return. A whole article mixed into one vector gets pulled toward every topic it mentions. A short window stays on one topic.\n\nAn overlapping window keeps context that would otherwise fall on a boundary. If the window is 500 characters and the overlap is 50, the next piece starts 450 characters later. The shared overlap mean",
+    "arts 450 characters later. The shared overlap means a sentence cut in half still appears whole in one of the two pieces. Those pieces are the overlapping chunks the database actually stores.\n\nThe chunker walks the text, and we split long documents into overlapping chunks before embedding them. Each chunk becomes its own record, with the filename and the window index stored as metadata. A question can then land on the chunk that actually mentions the topic.\n\nSplit long documents into overlapping ",
+    "the topic.\n\nSplit long documents into overlapping chunks whenever a note is longer than the window. The overlap is the part of this design that keeps boundary sentences from disappearing.",
+    "Cosine similarity is the cosine of the angle between two vectors. Parallel vectors have cosine similarity 1. Perpendicular vectors have cosine similarity 0. Opposite vectors have cosine similarity -1. The angle ignores how long each arrow is, which is why direction is the thing being compared.\n\nThis database stores normalized vectors. A normalized vector has length 1, so the length no longer affects the score. For normalized vectors, cosine similarity is the dot product. You can write that as a ",
+    "arity is the dot product. You can write that as a single matrix product: every stored row dotted with the query vector. That product is the cosine similarity of each row.\n\nCosine similarity between normalized vectors is the number printed next to each hit. A larger cosine similarity means the passage points in a closer direction to the question. Normalized vectors make that comparison a dot product, which is cheap to compute for every row in the matrix.\n\nRemember the rule used everywhere in this",
+    "matrix.\n\nRemember the rule used everywhere in this project: normalize first, then the dot product is the cosine similarity. If you skip normalization, a longer vector can outrank a vector that actually points the same way.",
+    "Exact scan scores every stored row against the question. Nothing is skipped. The engine computes a similarity for each row, then keeps the top-k highest scores. That answer is the true nearest neighbors for the metric you chose. People also call this exact search, because the scan is exhaustive.\n\nThe procedure is short. A question vector is normalized. The matrix holds one normalized row per passage. Their dot products are the cosine scores. argpartition finds the top-k without sorting the whole",
+    "artition finds the top-k without sorting the whole collection, and those k rows are sorted for display. A metadata filter sets the rejected rows to negative infinity before that top-k is chosen, so they cannot win.\n\nExact scan is the reference answer. An approximate index is judged by how often it returns the same rows. On a small collection the full pass is cheap. It grows linearly with the number of stored rows, which is why larger systems build a graph index beside the matrix.\n\nUse the exact ",
+    "d a graph index beside the matrix.\n\nUse the exact scan when you want the ranking you can check by hand. Every row received a score, and the highest scores are the ones you see.",
+    "This note is about a day of hiking in the hills, far from any kitchen.\n\nLace your boots before you step onto the trail. A hiking trail with steady elevation is easier to follow in the morning, when the ridge is cool. Carry water, a paper map, and a jacket in case the wind picks up above the tree line. Tell someone which trailhead you left from.\n\nThe best hiking routes gain elevation gradually. Watch the blazes, keep your boots dry at the stream crossing, and turn around if the ridge disappears i",
+    "rossing, and turn around if the ridge disappears into cloud. Reaching the summit marker is the point of the hike. Loose stone on a steep trail will shift under tired boots, so place each step on purpose.\n\nAfter hiking, check your boots for mud and mark the trail you finished on the map. Elevation you climbed today is the number worth writing down. A short hiking loop still counts when the elevation is honest and the boots come home muddy.",
+    "This note answers a practical question: how does approximate search work?\n\nApproximate search does not score every row. Approximate search walks a graph called HNSW, short for Hierarchical Navigable Small World. The graph has layers. Upper layers are sparse shortcuts. The bottom layer holds every row. Approximate search starts at the top and takes the shortcut that moves closer to the question.\n\nOn insert, each row draws a random level. Most rows live only on the bottom. A row on a higher layer ",
+    " live only on the bottom. A row on a higher layer links far across the collection. The new row connects to nearby neighbors, and neighbors that grew too many links drop their farthest ones. The cap on those links is the parameter M.\n\nHere is how approximate search will work on a question. Enter at the top layer. Move to the neighbor closest to the question. Drop one layer and repeat. On the bottom layer, keep a wider beam of candidates. That beam is the approximate nearest neighbors. The walk is",
+    " is the approximate nearest neighbors. The walk is the part that makes approximate search work at larger sizes. Approximate search works because the walk visits a fraction of the rows. Compare it with a full scan when you want to see what the walk missed.",
+    "Saving the collection writes two files. The numeric matrix goes to an npy file, one row per stored passage. The ids, the passage text, the metadata, and the HNSW adjacency lists go to meta.json, which you can open and read.\n\nReload reads both files and rebuilds the store and the graph. A later question uses the same embedder settings that were saved, so the new question lines up with the rows already on disk. Quit the process and start another one: the rows are still there because they were writ",
+    "e: the rows are still there because they were written out.\n\nPersistence is what lets you seed the sample notes and query again after the program exits. The matrix holds the numbers. The json holds everything you might want to read, including which rows are linked on each layer of the graph.\n\nIf you seed a second time, the directory is replaced with a fresh copy of the sample. That keeps the demo reproducible. Adding your own file afterward appends rows and writes the directory again.",
+    "This note is a recipe for how to bake sourdough bread.\n\nTo bake sourdough bread, start with a ripe starter. Mix the starter with flour and water until the dough comes together. Let the dough rest, then stretch and fold it. Those folds build strength in the sourdough dough. Dust the bench with flour so the dough does not stick while you shape it.\n\nShape the sourdough loaf and let it rise in a basket. Heat a dutch oven and bake the sourdough bread covered, then uncovered until the crust is deep br",
+    "covered, then uncovered until the crust is deep brown. Cool the loaf before you slice it. Steam from the covered bake is what opens the ear on the loaf.\n\nPeople bake sourdough bread because the starter gives the crumb its tang. A fresh slice of sourdough bread with butter is the reward for the wait. If the dough feels slack, give it another fold before you shape the loaf. The goal of this note is simple: bake sourdough bread, from starter to browned crust.",
+    "An embedding turns text into a vector. A vector is a fixed list of floats. In this project the list has 256 positions. Each position is a coordinate built by hashing the words in the text. The database stores that vector beside the original passage so a later comparison can use the numbers and still show you the words.\n\nTwo notes that share distinctive words get vectors that point in a similar direction. You can picture each embedding as a point. Nearby points come from notes that reused the sam",
+    " Nearby points come from notes that reused the same words. The hashing embedder is deliberately simple: it has no downloaded model, and the same sentence always produces the same vector.\n\nNothing here learns a meaning the way a large language model does. The vector is a tally of which tokens showed up. That is enough to see the machinery of a vector database: store the point, compare points, and return the passage that belonged to the closest point.\n\nWhen you read a hit, you are reading the text",
+    "nt.\n\nWhen you read a hit, you are reading the text that was attached to a vector. The ranking itself never looks at letters. It looks at the coordinates the embedder wrote down when the note was inserted."
+  ],
+  "metadata": [
+    {
+      "source": "chunking.txt",
+      "topic": "chunking",
+      "chunk": 0
+    },
+    {
+      "source": "chunking.txt",
+      "topic": "chunking",
+      "chunk": 1
+    },
+    {
+      "source": "chunking.txt",
+      "topic": "chunking",
+      "chunk": 2
+    },
+    {
+      "source": "cosine.txt",
+      "topic": "cosine",
+      "chunk": 0
+    },
+    {
+      "source": "cosine.txt",
+      "topic": "cosine",
+      "chunk": 1
+    },
+    {
+      "source": "cosine.txt",
+      "topic": "cosine",
+      "chunk": 2
+    },
+    {
+      "source": "exact_search.txt",
+      "topic": "exact_search",
+      "chunk": 0
+    },
+    {
+      "source": "exact_search.txt",
+      "topic": "exact_search",
+      "chunk": 1
+    },
+    {
+      "source": "exact_search.txt",
+      "topic": "exact_search",
+      "chunk": 2
+    },
+    {
+      "source": "hiking.txt",
+      "topic": "hiking",
+      "chunk": 0
+    },
+    {
+      "source": "hiking.txt",
+      "topic": "hiking",
+      "chunk": 1
+    },
+    {
+      "source": "hnsw.txt",
+      "topic": "hnsw",
+      "chunk": 0
+    },
+    {
+      "source": "hnsw.txt",
+      "topic": "hnsw",
+      "chunk": 1
+    },
+    {
+      "source": "hnsw.txt",
+      "topic": "hnsw",
+      "chunk": 2
+    },
+    {
+      "source": "persistence.txt",
+      "topic": "persistence",
+      "chunk": 0
+    },
+    {
+      "source": "persistence.txt",
+      "topic": "persistence",
+      "chunk": 1
+    },
+    {
+      "source": "sourdough.txt",
+      "topic": "sourdough",
+      "chunk": 0
+    },
+    {
+      "source": "sourdough.txt",
+      "topic": "sourdough",
+      "chunk": 1
+    },
+    {
+      "source": "vectors.txt",
+      "topic": "vectors",
+      "chunk": 0
+    },
+    {
+      "source": "vectors.txt",
+      "topic": "vectors",
+      "chunk": 1
+    },
+    {
+      "source": "vectors.txt",
+      "topic": "vectors",
+      "chunk": 2
+    }
+  ],
+  "next_id": 21,
+  "hnsw": {
+    "M": 16,
+    "ef_construction": 64,
+    "ef_search": 64,
+    "seed": 1,
+    "entry_id": 13,
+    "max_level": 2,
+    "layers": [
+      {
+        "0": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          8,
+          11,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20
+        ],
+        "1": [
+          0,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          12,
+          13,
+          14,
+          15,
+          16,
+          18,
+          19,
+          20
+        ],
+        "2": [
+          0,
+          1,
+          5,
+          7,
+          9,
+          10,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20
+        ],
+        "3": [
+          0,
+          1,
+          4,
+          5,
+          6,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          18,
+          19
+        ],
+        "4": [
+          0,
+          1,
+          3,
+          5,
+          6,
+          7,
+          8,
+          10,
+          11,
+          12,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19
+        ],
+        "5": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          6,
+          7,
+          8,
+          12,
+          13,
+          14,
+          16,
+          17,
+          18,
+          19,
+          20
+        ],
+        "6": [
+          0,
+          1,
+          3,
+          4,
+          5,
+          7,
+          8,
+          11,
+          12,
+          13,
+          14,
+          15,
+          17,
+          18,
+          19,
+          20
+        ],
+        "7": [
+          1,
+          2,
+          4,
+          5,
+          6,
+          8,
+          9,
+          11,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20
+        ],
+        "8": [
+          0,
+          1,
+          3,
+          4,
+          5,
+          6,
+          7,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          17,
+          18,
+          20
+        ],
+        "9": [
+          2,
+          3,
+          7,
+          8,
+          10,
+          11,
+          17,
+          18
+        ],
+        "10": [
+          2,
+          3,
+          4,
+          8,
+          9,
+          11,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20
+        ],
+        "11": [
+          0,
+          3,
+          4,
+          6,
+          7,
+          8,
+          9,
+          10,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          20
+        ],
+        "12": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          8,
+          11,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20
+        ],
+        "13": [
+          0,
+          1,
+          2,
+          3,
+          5,
+          6,
+          7,
+          8,
+          11,
+          12,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20
+        ],
+        "14": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          11,
+          12,
+          13,
+          15,
+          18,
+          19,
+          20
+        ],
+        "15": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          6,
+          7,
+          10,
+          11,
+          12,
+          13,
+          14,
+          16,
+          17
+        ],
+        "16": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          7,
+          10,
+          11,
+          12,
+          13,
+          15,
+          17,
+          18,
+          19,
+          20
+        ],
+        "17": [
+          0,
+          2,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          15,
+          16,
+          19,
+          20
+        ],
+        "18": [
+          0,
+          1,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          14,
+          16,
+          19,
+          20
+        ],
+        "19": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          10,
+          12,
+          13,
+          14,
+          16,
+          17,
+          18,
+          20
+        ],
+        "20": [
+          0,
+          1,
+          2,
+          5,
+          6,
+          7,
+          8,
+          10,
+          11,
+          12,
+          13,
+          14,
+          16,
+          17,
+          18,
+          19
+        ]
+      },
+      {
+        "9": [
+          13,
+          19,
+          20
+        ],
+        "13": [
+          9,
+          19,
+          20
+        ],
+        "19": [
+          9,
+          13,
+          20
+        ],
+        "20": [
+          9,
+          13,
+          19
+        ]
+      },
+      {
+        "13": []
+      }
+    ]
+  }
+}

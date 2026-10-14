@@ -1,0 +1,7 @@
+Saving the collection writes two files. The numeric matrix goes to an npy file, one row per stored passage. The ids, the passage text, the metadata, and the HNSW adjacency lists go to meta.json, which you can open and read.
+
+Reload reads both files and rebuilds the store and the graph. A later question uses the same embedder settings that were saved, so the new question lines up with the rows already on disk. Quit the process and start another one: the rows are still there because they were written out.
+
+Persistence is what lets you seed the sample notes and query again after the program exits. The matrix holds the numbers. The json holds everything you might want to read, including which rows are linked on each layer of the graph.
+
+If you seed a second time, the directory is replaced with a fresh copy of the sample. That keeps the demo reproducible. Adding your own file afterward appends rows and writes the directory again.

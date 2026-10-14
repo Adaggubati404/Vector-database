@@ -1,0 +1,7 @@
+This note answers a practical question: how does approximate search work?
+
+Approximate search does not score every row. Approximate search walks a graph called HNSW, short for Hierarchical Navigable Small World. The graph has layers. Upper layers are sparse shortcuts. The bottom layer holds every row. Approximate search starts at the top and takes the shortcut that moves closer to the question.
+
+On insert, each row draws a random level. Most rows live only on the bottom. A row on a higher layer links far across the collection. The new row connects to nearby neighbors, and neighbors that grew too many links drop their farthest ones. The cap on those links is the parameter M.
+
+Here is how approximate search will work on a question. Enter at the top layer. Move to the neighbor closest to the question. Drop one layer and repeat. On the bottom layer, keep a wider beam of candidates. That beam is the approximate nearest neighbors. The walk is the part that makes approximate search work at larger sizes. Approximate search works because the walk visits a fraction of the rows. Compare it with a full scan when you want to see what the walk missed.

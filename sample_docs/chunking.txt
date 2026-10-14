@@ -1,0 +1,7 @@
+Long documents do not belong in the collection as one giant row. We split long documents into overlapping chunks so each piece is small enough to embed and specific enough to return. A whole article mixed into one vector gets pulled toward every topic it mentions. A short window stays on one topic.
+
+An overlapping window keeps context that would otherwise fall on a boundary. If the window is 500 characters and the overlap is 50, the next piece starts 450 characters later. The shared overlap means a sentence cut in half still appears whole in one of the two pieces. Those pieces are the overlapping chunks the database actually stores.
+
+The chunker walks the text, and we split long documents into overlapping chunks before embedding them. Each chunk becomes its own record, with the filename and the window index stored as metadata. A question can then land on the chunk that actually mentions the topic.
+
+Split long documents into overlapping chunks whenever a note is longer than the window. The overlap is the part of this design that keeps boundary sentences from disappearing.

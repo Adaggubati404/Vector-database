@@ -1,0 +1,7 @@
+Exact scan scores every stored row against the question. Nothing is skipped. The engine computes a similarity for each row, then keeps the top-k highest scores. That answer is the true nearest neighbors for the metric you chose. People also call this exact search, because the scan is exhaustive.
+
+The procedure is short. A question vector is normalized. The matrix holds one normalized row per passage. Their dot products are the cosine scores. argpartition finds the top-k without sorting the whole collection, and those k rows are sorted for display. A metadata filter sets the rejected rows to negative infinity before that top-k is chosen, so they cannot win.
+
+Exact scan is the reference answer. An approximate index is judged by how often it returns the same rows. On a small collection the full pass is cheap. It grows linearly with the number of stored rows, which is why larger systems build a graph index beside the matrix.
+
+Use the exact scan when you want the ranking you can check by hand. Every row received a score, and the highest scores are the ones you see.

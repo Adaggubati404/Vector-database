@@ -1,0 +1,7 @@
+An embedding turns text into a vector. A vector is a fixed list of floats. In this project the list has 256 positions. Each position is a coordinate built by hashing the words in the text. The database stores that vector beside the original passage so a later comparison can use the numbers and still show you the words.
+
+Two notes that share distinctive words get vectors that point in a similar direction. You can picture each embedding as a point. Nearby points come from notes that reused the same words. The hashing embedder is deliberately simple: it has no downloaded model, and the same sentence always produces the same vector.
+
+Nothing here learns a meaning the way a large language model does. The vector is a tally of which tokens showed up. That is enough to see the machinery of a vector database: store the point, compare points, and return the passage that belonged to the closest point.
+
+When you read a hit, you are reading the text that was attached to a vector. The ranking itself never looks at letters. It looks at the coordinates the embedder wrote down when the note was inserted.

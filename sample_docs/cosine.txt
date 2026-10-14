@@ -1,0 +1,7 @@
+Cosine similarity is the cosine of the angle between two vectors. Parallel vectors have cosine similarity 1. Perpendicular vectors have cosine similarity 0. Opposite vectors have cosine similarity -1. The angle ignores how long each arrow is, which is why direction is the thing being compared.
+
+This database stores normalized vectors. A normalized vector has length 1, so the length no longer affects the score. For normalized vectors, cosine similarity is the dot product. You can write that as a single matrix product: every stored row dotted with the query vector. That product is the cosine similarity of each row.
+
+Cosine similarity between normalized vectors is the number printed next to each hit. A larger cosine similarity means the passage points in a closer direction to the question. Normalized vectors make that comparison a dot product, which is cheap to compute for every row in the matrix.
+
+Remember the rule used everywhere in this project: normalize first, then the dot product is the cosine similarity. If you skip normalization, a longer vector can outrank a vector that actually points the same way.
